@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Form, Button, Space, Typography, Card, message } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
-import { getContentType } from '../../api/content-types';
+import { getContentType, getContentTypes } from '../../api/content-types';
 import { getEntry, createEntry, updateEntry } from '../../api/content';
 import DynamicField from '../../components/DynamicField';
 
@@ -20,6 +20,11 @@ export default function ContentEntryForm() {
     queryKey: ['content-type', slug],
     queryFn: () => getContentType(slug!),
     enabled: !!slug,
+  });
+
+  const { data: allContentTypes } = useQuery({
+    queryKey: ['content-types'],
+    queryFn: getContentTypes,
   });
 
   const { data: entry } = useQuery({
@@ -104,7 +109,7 @@ export default function ContentEntryForm() {
           {contentType?.fields
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((field) => (
-              <DynamicField key={field.slug} field={field} />
+              <DynamicField key={field.slug} field={field} contentTypes={allContentTypes} />
             ))}
         </Form>
       </Card>

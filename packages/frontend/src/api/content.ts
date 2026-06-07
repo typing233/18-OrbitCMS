@@ -41,3 +41,12 @@ export async function updateEntry(
 export async function deleteEntry(slug: string, id: string): Promise<void> {
   await client.delete(`/content/${slug}/${id}`);
 }
+
+export async function getEntryOptions(
+  slug: string,
+  search?: string,
+): Promise<{ id: string; label: string }[]> {
+  const params = search ? { search } : {};
+  const { data } = await client.get(`/content/${slug}/options`, { params });
+  return data;
+}

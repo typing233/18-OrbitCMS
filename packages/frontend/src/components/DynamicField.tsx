@@ -1,13 +1,15 @@
 import { Form, Input, InputNumber, Switch, DatePicker } from 'antd';
-import type { FieldDefinition } from '../types/content-type';
+import type { FieldDefinition, ContentType } from '../types/content-type';
 import { FieldType } from '../types/content-type';
 import type { Rule } from 'antd/es/form';
+import RelationSelect from './RelationSelect';
 
 interface DynamicFieldProps {
   field: FieldDefinition;
+  contentTypes?: ContentType[];
 }
 
-export default function DynamicField({ field }: DynamicFieldProps) {
+export default function DynamicField({ field, contentTypes = [] }: DynamicFieldProps) {
   const rules: Rule[] = [];
 
   if (field.validations.required) {
@@ -56,8 +58,20 @@ export default function DynamicField({ field }: DynamicFieldProps) {
           />
         );
 
-      case FieldType.RELATION:
-        return <Input placeholder="Enter related entry ID" />;
+      case FieldType.RELATION: {
+        if (!field.relationConfig) {
+          return <Input placeholder="Relation not configured" disabled />;
+        }
+        const isMulti = field.relationConfig.relationType === 'oneToMany' ||
+                        field.relationConfig.relationType === 'manyToMany';
+        return (
+          <RelationSelect
+            targetContentTypeId={field.relationConfig.targetContentTypeId}
+            contentTypes={contentTypes}
+            multiple={isMulti}
+          />
+        );
+      }
 
       default:
         return <Input placeholder={`Enter ${field.name.toLowerCase()}`} />;

@@ -107,4 +107,39 @@ export class ContentService {
     const entry = await this.findOne(contentTypeSlug, id);
     await this.entryRepo.remove(entry);
   }
+
+  async getOptions(
+    contentTypeSlug: string,
+    search?: string,
+  ): Promise<{ id: string; label: string }[]> {
+    const contentType = await this.resolveContentType(contentTypeSlug);
+
+    const firstTextField = contentType.fields
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .find((f) => f.fieldType === 'text');
+
+    const displayField = firstTextField?.slug || null;
+
+    const qb = this.entryRepo
+      .createQueryBuilder('entry')
+      .where('entry.contentTypeId = :ctId', { ctId: contentType.id });
+
+    if (search && displayField) {
+      qb.andWhere(`entry.data ->> :field ILIKE :search`, {
+        field: displayField,
+        search: `%${search}%`,
+      });
+    }
+
+    qb.orderBy('entry.createdAt', 'DESC').take(50);
+
+    const entries = await qb.getMany();
+
+    return entries.map((entry) => ({
+      id: entry.id,
+      label: displayField
+        ? String(entry.data[displayField] || entry.id)
+        : entry.id,
+    }));
+  }
 }

@@ -26,6 +26,15 @@ export class ContentController {
     return this.contentService.findAll(slug, pagination);
   }
 
+  @Get('options')
+  @ApiOperation({ summary: 'List entry options for relation select (id + label)' })
+  async options(
+    @Param('contentTypeSlug') slug: string,
+    @Query('search') search?: string,
+  ) {
+    return this.contentService.getOptions(slug, search);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single entry' })
   async findOne(

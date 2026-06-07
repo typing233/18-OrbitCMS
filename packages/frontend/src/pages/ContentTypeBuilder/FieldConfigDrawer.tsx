@@ -10,7 +10,10 @@ import {
   Space,
   Divider,
 } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { FieldType } from '../../types/content-type';
+import { getContentTypes } from '../../api/content-types';
+
 function generateId(): string {
   return crypto.randomUUID();
 }
@@ -61,6 +64,12 @@ export default function FieldConfigDrawer({
   const [form] = Form.useForm();
   const fieldType = Form.useWatch('fieldType', form);
 
+  const { data: contentTypes } = useQuery({
+    queryKey: ['content-types'],
+    queryFn: getContentTypes,
+    enabled: open,
+  });
+
   useEffect(() => {
     if (open) {
       if (editingField) {
@@ -75,6 +84,8 @@ export default function FieldConfigDrawer({
           min: editingField.validations?.min,
           max: editingField.validations?.max,
           pattern: editingField.validations?.pattern,
+          targetContentTypeId: editingField.relationConfig?.targetContentTypeId,
+          relationType: editingField.relationConfig?.relationType || 'manyToOne',
         });
       } else {
         form.resetFields();
@@ -118,6 +129,11 @@ export default function FieldConfigDrawer({
   const showNumberValidations = fieldType === FieldType.NUMBER;
   const showRelationConfig = fieldType === FieldType.RELATION;
 
+  const contentTypeOptions = (contentTypes || []).map((ct) => ({
+    value: ct.id,
+    label: ct.name,
+  }));
+
   return (
     <Drawer
       title={editingField ? 'Edit Field' : 'Add Field'}
@@ -134,7 +150,7 @@ export default function FieldConfigDrawer({
         </Space>
       }
     >
-      <Form form={form} layout="vertical" initialValues={{ fieldType: FieldType.TEXT }}>
+      <Form form={form} layout="vertical" initialValues={{ fieldType: FieldType.TEXT, relationType: 'manyToOne' }}>
         <Form.Item
           name="name"
           label="Field Name"
@@ -197,8 +213,19 @@ export default function FieldConfigDrawer({
         {showRelationConfig && (
           <>
             <Divider orientation="left">Relation Config</Divider>
-            <Form.Item name="targetContentTypeId" label="Target Content Type ID">
-              <Input placeholder="UUID of target content type" />
+            <Form.Item
+              name="targetContentTypeId"
+              label="Target Content Type"
+              rules={[{ required: true, message: 'Please select a target content type' }]}
+            >
+              <Select
+                placeholder="Select target content type"
+                options={contentTypeOptions}
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.label as string || '').toLowerCase().includes(input.toLowerCase())
+                }
+              />
             </Form.Item>
             <Form.Item name="relationType" label="Relation Type">
               <Select
@@ -208,7 +235,6 @@ export default function FieldConfigDrawer({
                   { value: 'manyToOne', label: 'Many to One' },
                   { value: 'manyToMany', label: 'Many to Many' },
                 ]}
-                defaultValue="manyToOne"
               />
             </Form.Item>
           </>

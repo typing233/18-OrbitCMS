@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { FieldDefinition } from '../../../entities/field-definition.entity';
 import { ContentEntry } from '../../../entities/content-entry.entity';
 import { FieldType } from '../../../common/enums/field-type.enum';
@@ -95,6 +95,31 @@ export class ContentValidatorService {
             field: field.slug,
             message: `${field.name} must be unique. Value already exists.`,
           });
+        }
+      }
+
+      if (field.fieldType === FieldType.RELATION && field.relationConfig) {
+        const targetContentTypeId = field.relationConfig.targetContentTypeId;
+        const relationType = field.relationConfig.relationType;
+        const isMulti = relationType === 'oneToMany' || relationType === 'manyToMany';
+
+        const ids: string[] = isMulti
+          ? (Array.isArray(value) ? value : [value])
+          : [value];
+
+        if (ids.length > 0) {
+          const existing = await this.entryRepo.find({
+            where: { contentTypeId: targetContentTypeId, id: In(ids) },
+            select: ['id'],
+          });
+          const existingIds = new Set(existing.map((e) => e.id));
+          const missing = ids.filter((id) => !existingIds.has(id));
+          if (missing.length > 0) {
+            errors.push({
+              field: field.slug,
+              message: `${field.name}: referenced entries do not exist: ${missing.join(', ')}`,
+            });
+          }
         }
       }
     }
