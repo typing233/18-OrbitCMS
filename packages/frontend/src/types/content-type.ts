@@ -1,0 +1,64 @@
+export enum FieldType {
+  TEXT = 'text',
+  NUMBER = 'number',
+  RICHTEXT = 'richtext',
+  BOOLEAN = 'boolean',
+  DATE = 'date',
+  JSON = 'json',
+  RELATION = 'relation',
+}
+
+export interface FieldValidations {
+  required?: boolean;
+  unique?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  pattern?: string;
+}
+
+export interface RelationConfig {
+  targetContentTypeId: string;
+  relationType: 'oneToOne' | 'oneToMany' | 'manyToOne' | 'manyToMany';
+}
+
+export interface FieldDefinition {
+  id: string;
+  name: string;
+  slug: string;
+  fieldType: FieldType;
+  validations: FieldValidations;
+  relationConfig: RelationConfig | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentType {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  fields: FieldDefinition[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContentEntry {
+  id: string;
+  contentTypeId: string;
+  data: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}

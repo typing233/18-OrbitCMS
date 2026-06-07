@@ -1,0 +1,14 @@
+{
+  "name": "orbit-cms",
+  "private": true,
+  "scripts": {
+    "dev": "docker compose up",
+    "dev:backend": "pnpm --filter @orbit-cms/backend dev",
+    "dev:frontend": "pnpm --filter @orbit-cms/frontend dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

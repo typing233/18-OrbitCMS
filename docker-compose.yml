@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - orbit-net
+
+  backend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && corepack prepare pnpm@latest --activate && pnpm install && pnpm dev"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./packages/backend:/app
+      - backend_modules:/app/node_modules
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - orbit-net
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && corepack prepare pnpm@latest --activate && pnpm install && pnpm dev"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./packages/frontend:/app
+      - frontend_modules:/app/node_modules
+    environment:
+      NODE_ENV: development
+    depends_on:
+      - backend
+    networks:
+      - orbit-net
+
+volumes:
+  pgdata:
+  backend_modules:
+  frontend_modules:
+
+networks:
+  orbit-net:
+    driver: bridge
