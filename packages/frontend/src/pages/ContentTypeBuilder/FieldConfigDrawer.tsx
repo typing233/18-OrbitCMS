@@ -43,6 +43,7 @@ const fieldTypeOptions = [
   { value: FieldType.DATE, label: 'Date' },
   { value: FieldType.JSON, label: 'JSON' },
   { value: FieldType.RELATION, label: 'Relation' },
+  { value: FieldType.MEDIA, label: 'Media' },
 ];
 
 function slugify(text: string): string {
@@ -102,23 +103,48 @@ export default function FieldConfigDrawer({
 
   const handleSave = async () => {
     const values = await form.validateFields();
+
+    const newValidations: Record<string, any> = {
+      ...(editingField?.validations || {}),
+      required: values.required || false,
+      unique: values.unique || false,
+    };
+
+    if (values.minLength !== undefined && values.minLength !== null) {
+      newValidations.minLength = values.minLength;
+    } else {
+      delete newValidations.minLength;
+    }
+    if (values.maxLength !== undefined && values.maxLength !== null) {
+      newValidations.maxLength = values.maxLength;
+    } else {
+      delete newValidations.maxLength;
+    }
+    if (values.min !== undefined && values.min !== null) {
+      newValidations.min = values.min;
+    } else {
+      delete newValidations.min;
+    }
+    if (values.max !== undefined && values.max !== null) {
+      newValidations.max = values.max;
+    } else {
+      delete newValidations.max;
+    }
+    if (values.pattern) {
+      newValidations.pattern = values.pattern;
+    } else {
+      delete newValidations.pattern;
+    }
+
     const fieldData: FieldFormData = {
       tempId: editingField?.tempId || generateId(),
       name: values.name,
       slug: values.slug,
       fieldType: values.fieldType,
-      validations: {
-        required: values.required || false,
-        unique: values.unique || false,
-        ...(values.minLength !== undefined && { minLength: values.minLength }),
-        ...(values.maxLength !== undefined && { maxLength: values.maxLength }),
-        ...(values.min !== undefined && { min: values.min }),
-        ...(values.max !== undefined && { max: values.max }),
-        ...(values.pattern && { pattern: values.pattern }),
-      },
+      validations: newValidations,
       relationConfig: values.fieldType === FieldType.RELATION
         ? { targetContentTypeId: values.targetContentTypeId, relationType: values.relationType || 'manyToOne' }
-        : null,
+        : (editingField?.relationConfig || null),
       sortOrder: editingField?.sortOrder || 0,
     };
     onSave(fieldData);

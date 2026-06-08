@@ -4,6 +4,7 @@ import { Repository, Not } from 'typeorm';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as sharp from 'sharp';
 import { pipeline } from 'stream/promises';
 import { MediaAsset, MediaStatus } from '../../entities/media-asset.entity';
 import { AuditService } from '../auth/audit.service';
@@ -66,7 +67,21 @@ export class MediaService {
       asset.status = MediaStatus.PROCESSING;
     }
 
-    return this.mediaRepo.save(asset);
+    try {
+      return await this.mediaRepo.save(asset);
+    } catch (err: any) {
+      if (err.code === '23505' && err.detail?.includes('contentHash')) {
+        const existing = await this.mediaRepo.findOne({
+          where: { contentHash: asset.contentHash!, tenantId: asset.tenantId, id: Not(asset.id) },
+        });
+        if (existing) {
+          asset.contentHash = null;
+          asset.metadata = { ...asset.metadata, duplicateOf: existing.id };
+          return this.mediaRepo.save(asset);
+        }
+      }
+      throw err;
+    }
   }
 
   private async assembleChunks(asset: MediaAsset) {
@@ -149,25 +164,47 @@ export class MediaService {
     const sourcePath = path.join(this.uploadDir, asset.storagePath);
     if (!fs.existsSync(sourcePath)) return variants;
 
-    const thumbPath = `${asset.storagePath}_thumb`;
-    const mediumPath = `${asset.storagePath}_medium`;
+    const thumbPath = `${asset.storagePath}_thumb.webp`;
+    const mediumPath = `${asset.storagePath}_medium.webp`;
     const thumbFull = path.join(this.uploadDir, thumbPath);
     const mediumFull = path.join(this.uploadDir, mediumPath);
 
     try {
-      fs.copyFileSync(sourcePath, thumbFull);
-      fs.copyFileSync(sourcePath, mediumFull);
+      await (sharp as any)(sourcePath)
+        .resize(150, 150, { fit: 'cover' })
+        .webp({ quality: 70 })
+        .toFile(thumbFull);
+
+      await (sharp as any)(sourcePath)
+        .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toFile(mediumFull);
 
       const thumbStat = fs.statSync(thumbFull);
       const mediumStat = fs.statSync(mediumFull);
 
       variants.push(
-        { name: 'thumbnail', path: thumbPath, mimeType: asset.mimeType, size: thumbStat.size },
-        { name: 'medium', path: mediumPath, mimeType: asset.mimeType, size: mediumStat.size },
+        { name: 'thumbnail', path: thumbPath, mimeType: 'image/webp', size: thumbStat.size },
+        { name: 'medium', path: mediumPath, mimeType: 'image/webp', size: mediumStat.size },
       );
       asset.thumbnailPath = thumbPath;
     } catch (err) {
       this.logger.warn(`Failed to generate variants for ${asset.id}: ${err}`);
+      try {
+        fs.copyFileSync(sourcePath, thumbFull.replace('.webp', ''));
+        fs.copyFileSync(sourcePath, mediumFull.replace('.webp', ''));
+        const fallbackThumb = thumbPath.replace('.webp', '');
+        const fallbackMedium = mediumPath.replace('.webp', '');
+        const tStat = fs.statSync(path.join(this.uploadDir, fallbackThumb));
+        const mStat = fs.statSync(path.join(this.uploadDir, fallbackMedium));
+        variants.push(
+          { name: 'thumbnail', path: fallbackThumb, mimeType: asset.mimeType, size: tStat.size },
+          { name: 'medium', path: fallbackMedium, mimeType: asset.mimeType, size: mStat.size },
+        );
+        asset.thumbnailPath = fallbackThumb;
+      } catch {
+        this.logger.error(`Fallback variant generation also failed for ${asset.id}`);
+      }
     }
 
     return variants;
@@ -230,14 +267,39 @@ export class MediaService {
     if (alreadyReferenced) return asset;
     asset.references = [...asset.references, ref];
     asset.referenceCount = asset.references.length;
-    return this.mediaRepo.save(asset);
+    const saved = await this.mediaRepo.save(asset);
+
+    await this.auditService.log({
+      tenantId,
+      userId: null,
+      action: 'media.reference.add',
+      resource: 'media',
+      resourceId: id,
+      after: ref,
+    });
+
+    return saved;
   }
 
   async removeReference(id: string, tenantId: string, entryId: string) {
     const asset = await this.findOne(id, tenantId);
+    const removed = asset.references.filter((r) => r.entryId === entryId);
     asset.references = asset.references.filter((r) => r.entryId !== entryId);
     asset.referenceCount = asset.references.length;
-    return this.mediaRepo.save(asset);
+    const saved = await this.mediaRepo.save(asset);
+
+    if (removed.length > 0) {
+      await this.auditService.log({
+        tenantId,
+        userId: null,
+        action: 'media.reference.remove',
+        resource: 'media',
+        resourceId: id,
+        before: { entryId, references: removed },
+      });
+    }
+
+    return saved;
   }
 
   async syncReferencesForEntry(

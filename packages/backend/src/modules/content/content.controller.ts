@@ -8,6 +8,7 @@ import {
   Body,
   Query,
   UseGuards,
+  UseInterceptors,
   Headers,
   Req,
 } from '@nestjs/common';
@@ -22,10 +23,12 @@ import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PermissionAction } from '../../entities/permission.entity';
+import { FieldPermissionsInterceptor } from '../../common/interceptors/field-permissions.interceptor';
 
 @ApiTags('Content')
 @Controller('api/v1/content/:contentTypeSlug')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseInterceptors(FieldPermissionsInterceptor)
 @ApiBearerAuth()
 export class ContentController {
   constructor(private readonly contentService: ContentService) {}
@@ -51,8 +54,9 @@ export class ContentController {
   async options(
     @Param('contentTypeSlug') slug: string,
     @Query('search') search?: string,
+    @Req() req?: any,
   ) {
-    return this.contentService.getOptions(slug, search);
+    return this.contentService.getOptions(slug, search, this.resolveTenantId(req));
   }
 
   @Get(':id')

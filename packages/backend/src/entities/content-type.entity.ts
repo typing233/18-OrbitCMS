@@ -5,18 +5,30 @@ import {
   OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { FieldDefinition } from './field-definition.entity';
+import { Tenant } from './tenant.entity';
 
 @Entity('content_types')
+@Index(['tenantId', 'slug'], { unique: true })
 export class ContentType {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column()
+  tenantId: string;
+
+  @ManyToOne(() => Tenant, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'tenantId' })
+  tenant: Tenant;
+
+  @Column()
   name: string;
 
-  @Column({ unique: true })
+  @Column()
   slug: string;
 
   @Column({ type: 'text', nullable: true })

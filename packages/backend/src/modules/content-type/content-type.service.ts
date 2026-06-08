@@ -19,16 +19,23 @@ export class ContentTypeService {
     private readonly fieldDefRepo: Repository<FieldDefinition>,
   ) {}
 
-  async findAll(): Promise<ContentType[]> {
+  async findAll(tenantId?: string): Promise<ContentType[]> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
     return this.contentTypeRepo.find({
+      where,
       relations: ['fields'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findOne(idOrSlug: string): Promise<ContentType> {
+  async findOne(idOrSlug: string, tenantId?: string): Promise<ContentType> {
+    const whereClause: any[] = tenantId
+      ? [{ id: idOrSlug, tenantId }, { slug: idOrSlug, tenantId }]
+      : [{ id: idOrSlug }, { slug: idOrSlug }];
+
     const contentType = await this.contentTypeRepo.findOne({
-      where: [{ id: idOrSlug }, { slug: idOrSlug }],
+      where: whereClause,
       relations: ['fields'],
     });
 
@@ -40,10 +47,10 @@ export class ContentTypeService {
     return contentType;
   }
 
-  async create(dto: CreateContentTypeDto): Promise<ContentType> {
+  async create(dto: CreateContentTypeDto, tenantId: string): Promise<ContentType> {
     const slug = slugify(dto.name);
 
-    const existing = await this.contentTypeRepo.findOne({ where: { slug } });
+    const existing = await this.contentTypeRepo.findOne({ where: { slug, tenantId } });
     if (existing) {
       throw new ConflictException(`Content type with slug "${slug}" already exists`);
     }
@@ -51,6 +58,7 @@ export class ContentTypeService {
     const contentType = this.contentTypeRepo.create({
       name: dto.name,
       slug,
+      tenantId,
       description: dto.description || null,
     });
 
@@ -71,16 +79,16 @@ export class ContentTypeService {
       await this.fieldDefRepo.save(fields);
     }
 
-    return this.findOne(saved.id);
+    return this.findOne(saved.id, tenantId);
   }
 
-  async update(id: string, dto: UpdateContentTypeDto): Promise<ContentType> {
-    const contentType = await this.findOne(id);
+  async update(id: string, dto: UpdateContentTypeDto, tenantId: string): Promise<ContentType> {
+    const contentType = await this.findOne(id, tenantId);
 
     if (dto.name && dto.name !== contentType.name) {
       const newSlug = slugify(dto.name);
       const conflict = await this.contentTypeRepo.findOne({
-        where: { slug: newSlug },
+        where: { slug: newSlug, tenantId },
       });
       if (conflict && conflict.id !== id) {
         throw new ConflictException(`Content type with slug "${newSlug}" already exists`);
@@ -114,11 +122,11 @@ export class ContentTypeService {
       }
     }
 
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async remove(id: string): Promise<void> {
-    const contentType = await this.findOne(id);
+  async remove(id: string, tenantId: string): Promise<void> {
+    const contentType = await this.findOne(id, tenantId);
     await this.contentTypeRepo.remove(contentType);
   }
 }

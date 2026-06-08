@@ -25,9 +25,11 @@ export class ContentService {
     private readonly mediaService: MediaService,
   ) {}
 
-  private async resolveContentType(slug: string): Promise<ContentType> {
+  private async resolveContentType(slug: string, tenantId?: string): Promise<ContentType> {
+    const where: any = { slug };
+    if (tenantId) where.tenantId = tenantId;
     const contentType = await this.contentTypeRepo.findOne({
-      where: { slug },
+      where,
       relations: ['fields'],
     });
     if (!contentType) {
@@ -41,7 +43,7 @@ export class ContentService {
     pagination: PaginationDto,
     tenantId?: string,
   ): Promise<PaginatedResponse<ContentEntry>> {
-    const contentType = await this.resolveContentType(contentTypeSlug);
+    const contentType = await this.resolveContentType(contentTypeSlug, tenantId);
     const { page = 1, pageSize = 20, sort, order = 'DESC' } = pagination;
 
     const qb = this.entryRepo
@@ -76,7 +78,7 @@ export class ContentService {
   }
 
   async findOne(contentTypeSlug: string, id: string, tenantId?: string): Promise<ContentEntry> {
-    const contentType = await this.resolveContentType(contentTypeSlug);
+    const contentType = await this.resolveContentType(contentTypeSlug, tenantId);
     const where: any = { id, contentTypeId: contentType.id };
     if (tenantId) where.tenantId = tenantId;
 
@@ -92,7 +94,7 @@ export class ContentService {
     data: Record<string, any>,
     options?: { tenantId?: string; userId?: string },
   ): Promise<ContentEntry> {
-    const contentType = await this.resolveContentType(contentTypeSlug);
+    const contentType = await this.resolveContentType(contentTypeSlug, options?.tenantId);
 
     await this.validator.validate(contentType.fields, data, contentType.id);
 
@@ -140,7 +142,7 @@ export class ContentService {
     data: Record<string, any>,
     options?: { tenantId?: string; userId?: string; expectedVersion?: number },
   ): Promise<ContentEntry> {
-    const contentType = await this.resolveContentType(contentTypeSlug);
+    const contentType = await this.resolveContentType(contentTypeSlug, options?.tenantId);
     const entry = await this.findOne(contentTypeSlug, id, options?.tenantId);
 
     if (options?.expectedVersion && entry.lockVersion !== options.expectedVersion) {
@@ -231,7 +233,19 @@ export class ContentService {
     entry.status = EntryStatus.DRAFT;
     entry.publishedData = null;
     entry.updatedById = options?.userId || null;
-    return this.entryRepo.save(entry);
+    const saved = await this.entryRepo.save(entry);
+
+    if (options?.tenantId) {
+      await this.auditService.log({
+        tenantId: options.tenantId,
+        userId: options.userId || null,
+        action: 'content.unpublish',
+        resource: contentTypeSlug,
+        resourceId: id,
+      });
+    }
+
+    return saved;
   }
 
   async rollback(contentTypeSlug: string, id: string, targetVersion: number, options?: { tenantId?: string; userId?: string }): Promise<ContentEntry> {
@@ -243,6 +257,7 @@ export class ContentService {
       throw new NotFoundException(`Version ${targetVersion} not found`);
     }
 
+    const beforeData = { ...entry.data };
     entry.data = version.data;
     entry.currentVersion += 1;
     entry.updatedById = options?.userId || null;
@@ -259,6 +274,18 @@ export class ContentService {
         changeNote: `Rolled back to version ${targetVersion}`,
       }),
     );
+
+    if (options?.tenantId) {
+      await this.auditService.log({
+        tenantId: options.tenantId,
+        userId: options.userId || null,
+        action: 'content.rollback',
+        resource: contentTypeSlug,
+        resourceId: id,
+        before: beforeData,
+        after: version.data,
+      });
+    }
 
     return saved;
   }
@@ -281,7 +308,19 @@ export class ContentService {
     }
     entry.lockedById = userId;
     entry.lockedAt = new Date();
-    return this.entryRepo.save(entry);
+    const saved = await this.entryRepo.save(entry);
+
+    if (tenantId) {
+      await this.auditService.log({
+        tenantId,
+        userId,
+        action: 'content.lock',
+        resource: contentTypeSlug,
+        resourceId: id,
+      });
+    }
+
+    return saved;
   }
 
   async unlock(contentTypeSlug: string, id: string, userId: string, tenantId?: string): Promise<ContentEntry> {
@@ -290,7 +329,19 @@ export class ContentService {
       entry.lockedById = null;
       entry.lockedAt = null;
     }
-    return this.entryRepo.save(entry);
+    const saved = await this.entryRepo.save(entry);
+
+    if (tenantId) {
+      await this.auditService.log({
+        tenantId,
+        userId,
+        action: 'content.unlock',
+        resource: contentTypeSlug,
+        resourceId: id,
+      });
+    }
+
+    return saved;
   }
 
   async remove(contentTypeSlug: string, id: string, tenantId?: string): Promise<void> {
@@ -318,8 +369,9 @@ export class ContentService {
   async getOptions(
     contentTypeSlug: string,
     search?: string,
+    tenantId?: string,
   ): Promise<{ id: string; label: string }[]> {
-    const contentType = await this.resolveContentType(contentTypeSlug);
+    const contentType = await this.resolveContentType(contentTypeSlug, tenantId);
 
     const firstTextField = contentType.fields
       .sort((a, b) => a.sortOrder - b.sortOrder)
