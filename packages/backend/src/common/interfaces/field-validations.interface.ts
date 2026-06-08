@@ -6,4 +6,7 @@ export interface FieldValidations {
   min?: number;
   max?: number;
   pattern?: string;
+  showWhen?: { field: string; value: any; operator?: string };
+  nestedFields?: any[];
+  repeatable?: boolean;
 }

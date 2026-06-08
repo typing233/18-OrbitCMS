@@ -16,6 +16,9 @@ export interface FieldValidations {
   min?: number;
   max?: number;
   pattern?: string;
+  showWhen?: { field: string; value: any; operator?: string };
+  nestedFields?: FieldDefinition[];
+  repeatable?: boolean;
 }
 
 export interface RelationConfig {
@@ -48,7 +51,16 @@ export interface ContentType {
 export interface ContentEntry {
   id: string;
   contentTypeId: string;
+  tenantId: string;
   data: Record<string, any>;
+  status: 'draft' | 'published' | 'archived';
+  publishedData: Record<string, any> | null;
+  currentVersion: number;
+  lockVersion: number;
+  lockedById: string | null;
+  lockedAt: string | null;
+  createdById: string | null;
+  updatedById: string | null;
   createdAt: string;
   updatedAt: string;
 }

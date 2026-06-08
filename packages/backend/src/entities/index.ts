@@ -1,3 +1,10 @@
 export { ContentType } from './content-type.entity';
-export { FieldDefinition } from './field-definition.entity';
 export { ContentEntry } from './content-entry.entity';
+export { FieldDefinition } from './field-definition.entity';
+export { Tenant } from './tenant.entity';
+export { User } from './user.entity';
+export { Role } from './role.entity';
+export { Permission, PermissionAction } from './permission.entity';
+export { AuditLog } from './audit-log.entity';
+export { MediaAsset, MediaStatus } from './media-asset.entity';
+export { ContentVersion, ContentStatus } from './content-version.entity';
