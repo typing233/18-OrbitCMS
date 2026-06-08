@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Headers,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ContentService } from './content.service';
@@ -29,15 +30,19 @@ import { PermissionAction } from '../../entities/permission.entity';
 export class ContentController {
   constructor(private readonly contentService: ContentService) {}
 
+  private resolveTenantId(req: any): string | undefined {
+    return req.user?.tenantId || req.headers['x-tenant-id'] || undefined;
+  }
+
   @Get()
   @Public()
   @ApiOperation({ summary: 'List entries for a content type' })
   async findAll(
     @Param('contentTypeSlug') slug: string,
     @Query() pagination: PaginationDto,
-    @CurrentUser('tenantId') tenantId?: string,
+    @Req() req: any,
   ) {
-    return this.contentService.findAll(slug, pagination, tenantId);
+    return this.contentService.findAll(slug, pagination, this.resolveTenantId(req));
   }
 
   @Get('options')
@@ -56,9 +61,9 @@ export class ContentController {
   async findOne(
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
-    @CurrentUser('tenantId') tenantId?: string,
+    @Req() req: any,
   ) {
-    return this.contentService.findOne(slug, id, tenantId);
+    return this.contentService.findOne(slug, id, this.resolveTenantId(req));
   }
 
   @Get(':id/versions')
@@ -67,7 +72,7 @@ export class ContentController {
   async getVersions(
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
-    @CurrentUser('tenantId') tenantId?: string,
+    @CurrentUser('tenantId') tenantId: string,
   ) {
     return this.contentService.getVersions(slug, id, tenantId);
   }
@@ -78,8 +83,8 @@ export class ContentController {
   async create(
     @Param('contentTypeSlug') slug: string,
     @Body() body: Record<string, any>,
-    @CurrentUser('tenantId') tenantId?: string,
-    @CurrentUser('id') userId?: string,
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.contentService.create(slug, body, { tenantId, userId });
   }
@@ -91,8 +96,8 @@ export class ContentController {
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
     @Body() body: Record<string, any>,
-    @CurrentUser('tenantId') tenantId?: string,
-    @CurrentUser('id') userId?: string,
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
     @Headers('x-expected-version') expectedVersion?: string,
   ) {
     return this.contentService.update(slug, id, body, {
@@ -108,8 +113,8 @@ export class ContentController {
   async publish(
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
-    @CurrentUser('tenantId') tenantId?: string,
-    @CurrentUser('id') userId?: string,
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.contentService.publish(slug, id, { tenantId, userId });
   }
@@ -120,8 +125,8 @@ export class ContentController {
   async unpublish(
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
-    @CurrentUser('tenantId') tenantId?: string,
-    @CurrentUser('id') userId?: string,
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.contentService.unpublish(slug, id, { tenantId, userId });
   }
@@ -133,8 +138,8 @@ export class ContentController {
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
     @Body() body: { targetVersion: number },
-    @CurrentUser('tenantId') tenantId?: string,
-    @CurrentUser('id') userId?: string,
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
   ) {
     return this.contentService.rollback(slug, id, body.targetVersion, { tenantId, userId });
   }
@@ -146,7 +151,7 @@ export class ContentController {
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @CurrentUser('tenantId') tenantId?: string,
+    @CurrentUser('tenantId') tenantId: string,
   ) {
     return this.contentService.lock(slug, id, userId, tenantId);
   }
@@ -158,7 +163,7 @@ export class ContentController {
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @CurrentUser('tenantId') tenantId?: string,
+    @CurrentUser('tenantId') tenantId: string,
   ) {
     return this.contentService.unlock(slug, id, userId, tenantId);
   }
@@ -169,7 +174,7 @@ export class ContentController {
   async remove(
     @Param('contentTypeSlug') slug: string,
     @Param('id') id: string,
-    @CurrentUser('tenantId') tenantId?: string,
+    @CurrentUser('tenantId') tenantId: string,
   ) {
     await this.contentService.remove(slug, id, tenantId);
     return { message: 'Entry deleted successfully' };

@@ -1,18 +1,22 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pipeline } from 'stream/promises';
 import { MediaAsset, MediaStatus } from '../../entities/media-asset.entity';
+import { AuditService } from '../auth/audit.service';
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
   private readonly uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
   constructor(
     @InjectRepository(MediaAsset)
     private readonly mediaRepo: Repository<MediaAsset>,
+    private readonly auditService: AuditService,
   ) {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
@@ -68,21 +72,30 @@ export class MediaService {
   private async assembleChunks(asset: MediaAsset) {
     const chunkDir = path.join(this.uploadDir, asset.tenantId, asset.id, 'chunks');
     const outputPath = path.join(this.uploadDir, asset.storagePath);
-    const writeStream = fs.createWriteStream(outputPath);
 
+    const writeStream = fs.createWriteStream(outputPath);
     for (let i = 0; i < asset.totalChunks; i++) {
-      const chunk = fs.readFileSync(path.join(chunkDir, `${i}`));
-      writeStream.write(chunk);
+      const chunkPath = path.join(chunkDir, `${i}`);
+      const chunkStream = fs.createReadStream(chunkPath);
+      await pipeline(chunkStream, writeStream, { end: false });
     }
     writeStream.end();
+    await new Promise<void>((resolve, reject) => {
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+    });
 
-    const fileBuffer = fs.readFileSync(outputPath);
-    asset.contentHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const hash = crypto.createHash('sha256');
+    const readStream = fs.createReadStream(outputPath);
+    for await (const chunk of readStream) {
+      hash.update(chunk);
+    }
+    asset.contentHash = hash.digest('hex');
 
     const duplicate = await this.mediaRepo.findOne({
-      where: { contentHash: asset.contentHash, tenantId: asset.tenantId },
+      where: { contentHash: asset.contentHash, tenantId: asset.tenantId, id: Not(asset.id) },
     });
-    if (duplicate && duplicate.id !== asset.id) {
+    if (duplicate) {
       asset.metadata = { ...asset.metadata, duplicateOf: duplicate.id };
     }
 
@@ -93,20 +106,70 @@ export class MediaService {
     const asset = await this.mediaRepo.findOne({ where: { id: assetId, tenantId } });
     if (!asset) throw new NotFoundException('Media asset not found');
 
+    if (asset.metadata?.duplicateOf) {
+      const existing = await this.mediaRepo.findOne({
+        where: { id: asset.metadata.duplicateOf, tenantId },
+      });
+      if (existing && existing.status === MediaStatus.READY) {
+        asset.status = MediaStatus.READY;
+        asset.metadata = { ...asset.metadata, deduplicatedFrom: existing.id };
+        const saved = await this.mediaRepo.save(asset);
+        await this.auditService.log({
+          tenantId,
+          userId: asset.uploadedById,
+          action: 'media.upload.deduplicated',
+          resource: 'media',
+          resourceId: saved.id,
+          after: { filename: saved.filename, duplicateOf: existing.id },
+        });
+        return saved;
+      }
+    }
+
     asset.status = MediaStatus.READY;
-    asset.variants = this.generateVariants(asset);
-    return this.mediaRepo.save(asset);
+    asset.variants = await this.generateVariants(asset);
+    const saved = await this.mediaRepo.save(asset);
+
+    await this.auditService.log({
+      tenantId,
+      userId: asset.uploadedById,
+      action: 'media.upload',
+      resource: 'media',
+      resourceId: saved.id,
+      after: { filename: saved.filename, mimeType: saved.mimeType, size: saved.size, contentHash: saved.contentHash },
+    });
+
+    return saved;
   }
 
-  private generateVariants(asset: MediaAsset): { name: string; path: string; mimeType: string; size: number }[] {
+  private async generateVariants(asset: MediaAsset): Promise<{ name: string; path: string; mimeType: string; size: number }[]> {
     const variants: { name: string; path: string; mimeType: string; size: number }[] = [];
-    if (asset.mimeType.startsWith('image/')) {
+    if (!asset.mimeType.startsWith('image/')) return variants;
+
+    const sourcePath = path.join(this.uploadDir, asset.storagePath);
+    if (!fs.existsSync(sourcePath)) return variants;
+
+    const thumbPath = `${asset.storagePath}_thumb`;
+    const mediumPath = `${asset.storagePath}_medium`;
+    const thumbFull = path.join(this.uploadDir, thumbPath);
+    const mediumFull = path.join(this.uploadDir, mediumPath);
+
+    try {
+      fs.copyFileSync(sourcePath, thumbFull);
+      fs.copyFileSync(sourcePath, mediumFull);
+
+      const thumbStat = fs.statSync(thumbFull);
+      const mediumStat = fs.statSync(mediumFull);
+
       variants.push(
-        { name: 'thumbnail', path: `${asset.storagePath}_thumb`, mimeType: asset.mimeType, size: 0 },
-        { name: 'medium', path: `${asset.storagePath}_medium`, mimeType: asset.mimeType, size: 0 },
+        { name: 'thumbnail', path: thumbPath, mimeType: asset.mimeType, size: thumbStat.size },
+        { name: 'medium', path: mediumPath, mimeType: asset.mimeType, size: mediumStat.size },
       );
-      asset.thumbnailPath = `${asset.storagePath}_thumb`;
+      asset.thumbnailPath = thumbPath;
+    } catch (err) {
+      this.logger.warn(`Failed to generate variants for ${asset.id}: ${err}`);
     }
+
     return variants;
   }
 
@@ -139,13 +202,32 @@ export class MediaService {
     if (asset.referenceCount > 0) {
       throw new ConflictException('Cannot delete: asset is still referenced by content entries');
     }
+
     const filePath = path.join(this.uploadDir, asset.storagePath);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    for (const variant of asset.variants || []) {
+      const variantPath = path.join(this.uploadDir, variant.path);
+      if (fs.existsSync(variantPath)) fs.unlinkSync(variantPath);
+    }
+
+    await this.auditService.log({
+      tenantId,
+      userId: asset.uploadedById,
+      action: 'media.delete',
+      resource: 'media',
+      resourceId: id,
+      before: { filename: asset.filename, mimeType: asset.mimeType, size: asset.size },
+    });
+
     await this.mediaRepo.remove(asset);
   }
 
   async addReference(id: string, tenantId: string, ref: { contentTypeId: string; entryId: string; fieldSlug: string }) {
     const asset = await this.findOne(id, tenantId);
+    const alreadyReferenced = asset.references.some(
+      (r) => r.entryId === ref.entryId && r.fieldSlug === ref.fieldSlug,
+    );
+    if (alreadyReferenced) return asset;
     asset.references = [...asset.references, ref];
     asset.referenceCount = asset.references.length;
     return this.mediaRepo.save(asset);
@@ -158,7 +240,63 @@ export class MediaService {
     return this.mediaRepo.save(asset);
   }
 
+  async syncReferencesForEntry(
+    tenantId: string,
+    entryId: string,
+    contentTypeId: string,
+    mediaIds: { fieldSlug: string; assetId: string }[],
+  ): Promise<void> {
+    const existingAssets = await this.mediaRepo.find({
+      where: { tenantId },
+    });
+
+    const referencedAssets = existingAssets.filter(
+      (a) => a.references.some((r) => r.entryId === entryId),
+    );
+
+    for (const asset of referencedAssets) {
+      const stillReferenced = mediaIds.some((m) => m.assetId === asset.id);
+      if (!stillReferenced) {
+        asset.references = asset.references.filter((r) => r.entryId !== entryId);
+        asset.referenceCount = asset.references.length;
+        await this.mediaRepo.save(asset);
+      }
+    }
+
+    for (const { fieldSlug, assetId } of mediaIds) {
+      try {
+        await this.addReference(assetId, tenantId, { contentTypeId, entryId, fieldSlug });
+      } catch {
+        // Asset may have been deleted concurrently
+      }
+    }
+  }
+
+  async removeAllReferencesForEntry(tenantId: string, entryId: string): Promise<void> {
+    const assets = await this.mediaRepo
+      .createQueryBuilder('media')
+      .where('media.tenantId = :tenantId', { tenantId })
+      .andWhere(`media.references @> :ref::jsonb`, { ref: JSON.stringify([{ entryId }]) })
+      .getMany();
+
+    for (const asset of assets) {
+      asset.references = asset.references.filter((r) => r.entryId !== entryId);
+      asset.referenceCount = asset.references.length;
+      await this.mediaRepo.save(asset);
+    }
+  }
+
   async checkDuplicate(tenantId: string, contentHash: string): Promise<MediaAsset | null> {
     return this.mediaRepo.findOne({ where: { tenantId, contentHash } });
+  }
+
+  async getPreviewUrl(id: string, tenantId: string, variant?: string): Promise<string> {
+    const asset = await this.findOne(id, tenantId);
+    if (variant && asset.variants) {
+      const v = asset.variants.find((vr) => vr.name === variant);
+      if (v) return `/uploads/${v.path}`;
+    }
+    if (asset.thumbnailPath) return `/uploads/${asset.thumbnailPath}`;
+    return `/uploads/${asset.storagePath}`;
   }
 }

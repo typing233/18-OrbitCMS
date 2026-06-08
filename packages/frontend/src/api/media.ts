@@ -1,41 +1,41 @@
 import client from './client';
 
 export async function initiateUpload(data: { filename: string; mimeType: string; size: number; totalChunks: number }) {
-  const res = await client.post('/api/v1/media/initiate', data);
+  const res = await client.post('/media/initiate', data);
   return res.data;
 }
 
 export async function uploadChunk(assetId: string, chunkIndex: number, chunk: Blob) {
   const formData = new FormData();
   formData.append('chunk', chunk);
-  const res = await client.post(`/api/v1/media/${assetId}/chunk/${chunkIndex}`, formData, {
+  const res = await client.post(`/media/${assetId}/chunk/${chunkIndex}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return res.data;
 }
 
 export async function finalizeUpload(assetId: string) {
-  const res = await client.post(`/api/v1/media/${assetId}/finalize`);
+  const res = await client.post(`/media/${assetId}/finalize`);
   return res.data;
 }
 
 export async function getMediaAssets(params: { page?: number; pageSize?: number; mimeType?: string }) {
-  const res = await client.get('/api/v1/media', { params });
+  const res = await client.get('/media', { params });
   return res.data;
 }
 
 export async function getMediaAsset(id: string) {
-  const res = await client.get(`/api/v1/media/${id}`);
+  const res = await client.get(`/media/${id}`);
   return res.data;
 }
 
 export async function deleteMediaAsset(id: string) {
-  const res = await client.delete(`/api/v1/media/${id}`);
+  const res = await client.delete(`/media/${id}`);
   return res.data;
 }
 
 export async function checkDuplicate(contentHash: string) {
-  const res = await client.post('/api/v1/media/check-duplicate', { contentHash });
+  const res = await client.post('/media/check-duplicate', { contentHash });
   return res.data;
 }
 

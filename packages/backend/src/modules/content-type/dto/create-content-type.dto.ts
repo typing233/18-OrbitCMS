@@ -13,6 +13,17 @@ import {
 import { Type } from 'class-transformer';
 import { FieldType } from '../../../common/enums/field-type.enum';
 
+export class ShowWhenConditionDto {
+  @IsString()
+  field: string;
+
+  value: any;
+
+  @IsOptional()
+  @IsString()
+  operator?: string;
+}
+
 export class FieldValidationsDto {
   @IsOptional()
   @IsBoolean()
@@ -41,6 +52,18 @@ export class FieldValidationsDto {
   @IsOptional()
   @IsString()
   pattern?: string;
+
+  @IsOptional()
+  @IsObject()
+  showWhen?: ShowWhenConditionDto;
+
+  @IsOptional()
+  @IsArray()
+  nestedFields?: any[];
+
+  @IsOptional()
+  @IsBoolean()
+  repeatable?: boolean;
 }
 
 export class RelationConfigDto {

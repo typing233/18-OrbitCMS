@@ -39,7 +39,7 @@ export default function ContentEntryForm() {
 
   const { data: versions } = useQuery({
     queryKey: ['versions', slug, id],
-    queryFn: () => client.get(`/content/${slug}/entries/${id}/versions`).then((r) => r.data),
+    queryFn: () => client.get(`/content/${slug}/${id}/versions`).then((r) => r.data),
     enabled: isEdit && !!slug && versionsDrawer,
   });
 
@@ -49,6 +49,15 @@ export default function ContentEntryForm() {
       setLockVersion(entry.lockVersion);
     }
   }, [entry, form]);
+
+  // Acquire lock on edit page mount, release on unmount
+  useEffect(() => {
+    if (!isEdit || !slug || !id) return;
+    client.post(`/content/${slug}/${id}/lock`).catch(() => {});
+    return () => {
+      client.post(`/content/${slug}/${id}/unlock`).catch(() => {});
+    };
+  }, [isEdit, slug, id]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, any>) => createEntry(slug!, data),

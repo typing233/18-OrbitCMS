@@ -6,6 +6,7 @@ export enum FieldType {
   DATE = 'date',
   JSON = 'json',
   RELATION = 'relation',
+  MEDIA = 'media',
 }
 
 export interface FieldValidations {

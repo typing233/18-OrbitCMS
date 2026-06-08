@@ -20,7 +20,7 @@ export enum MediaStatus {
 
 @Entity('media_assets')
 @Index(['tenantId'])
-@Index(['contentHash'], { unique: true, where: '"contentHash" IS NOT NULL' })
+@Index(['tenantId', 'contentHash'], { unique: true, where: '"contentHash" IS NOT NULL' })
 export class MediaAsset {
   @PrimaryGeneratedColumn('uuid')
   id: string;

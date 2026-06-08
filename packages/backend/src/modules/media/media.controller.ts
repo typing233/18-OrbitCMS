@@ -103,4 +103,15 @@ export class MediaController {
     const existing = await this.mediaService.checkDuplicate(tenantId, body.contentHash);
     return { exists: !!existing, asset: existing };
   }
+
+  @Get(':id/preview')
+  @ApiOperation({ summary: 'Get preview URL for a media asset' })
+  async preview(
+    @Param('id') id: string,
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('variant') variant?: string,
+  ) {
+    const url = await this.mediaService.getPreviewUrl(id, tenantId, variant);
+    return { url };
+  }
 }

@@ -7,6 +7,9 @@ import { ContentVersion, ContentStatus } from '../../entities/content-version.en
 import { ContentValidatorService } from './validation/content-validator.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
+import { AuditService } from '../auth/audit.service';
+import { MediaService } from '../media/media.service';
+import { FieldType } from '../../common/enums/field-type.enum';
 
 @Injectable()
 export class ContentService {
@@ -18,6 +21,8 @@ export class ContentService {
     @InjectRepository(ContentVersion)
     private readonly versionRepo: Repository<ContentVersion>,
     private readonly validator: ContentValidatorService,
+    private readonly auditService: AuditService,
+    private readonly mediaService: MediaService,
   ) {}
 
   private async resolveContentType(slug: string): Promise<ContentType> {
@@ -114,6 +119,18 @@ export class ContentService {
       }),
     );
 
+    if (options?.tenantId) {
+      await this.auditService.log({
+        tenantId: options.tenantId,
+        userId: options.userId || null,
+        action: 'content.create',
+        resource: contentTypeSlug,
+        resourceId: saved.id,
+        after: data,
+      });
+      await this.syncMediaReferences(options.tenantId, saved.id, contentType, data);
+    }
+
     return saved;
   }
 
@@ -148,6 +165,7 @@ export class ContentService {
 
     await this.validator.validate(contentType.fields, data, contentType.id, id);
 
+    const beforeData = { ...entry.data };
     entry.data = data;
     entry.currentVersion += 1;
     entry.updatedById = options?.userId || null;
@@ -159,10 +177,23 @@ export class ContentService {
         entryId: saved.id,
         version: saved.currentVersion,
         data,
-        status: saved.status === EntryStatus.PUBLISHED ? ContentStatus.DRAFT : ContentStatus.DRAFT,
+        status: ContentStatus.DRAFT,
         createdById: options?.userId || null,
       }),
     );
+
+    if (options?.tenantId) {
+      await this.auditService.log({
+        tenantId: options.tenantId,
+        userId: options.userId || null,
+        action: 'content.update',
+        resource: contentTypeSlug,
+        resourceId: id,
+        before: beforeData,
+        after: data,
+      });
+      await this.syncMediaReferences(options.tenantId, saved.id, contentType, data);
+    }
 
     return saved;
   }
@@ -180,6 +211,16 @@ export class ContentService {
     if (latestVersion) {
       latestVersion.status = ContentStatus.PUBLISHED;
       await this.versionRepo.save(latestVersion);
+    }
+
+    if (options?.tenantId) {
+      await this.auditService.log({
+        tenantId: options.tenantId,
+        userId: options.userId || null,
+        action: 'content.publish',
+        resource: contentTypeSlug,
+        resourceId: id,
+      });
     }
 
     return saved;
@@ -254,7 +295,24 @@ export class ContentService {
 
   async remove(contentTypeSlug: string, id: string, tenantId?: string): Promise<void> {
     const entry = await this.findOne(contentTypeSlug, id, tenantId);
+    const beforeData = { ...entry.data };
+
+    if (tenantId) {
+      await this.mediaService.removeAllReferencesForEntry(tenantId, id);
+    }
+
     await this.entryRepo.remove(entry);
+
+    if (tenantId) {
+      await this.auditService.log({
+        tenantId,
+        userId: null,
+        action: 'content.delete',
+        resource: contentTypeSlug,
+        resourceId: id,
+        before: beforeData,
+      });
+    }
   }
 
   async getOptions(
@@ -290,5 +348,32 @@ export class ContentService {
         ? String(entry.data[displayField] || entry.id)
         : entry.id,
     }));
+  }
+
+  private async syncMediaReferences(
+    tenantId: string,
+    entryId: string,
+    contentType: ContentType,
+    data: Record<string, any>,
+  ): Promise<void> {
+    const mediaFields = contentType.fields.filter(
+      (f) => f.fieldType === FieldType.MEDIA,
+    );
+    if (mediaFields.length === 0) return;
+
+    const mediaIds: { fieldSlug: string; assetId: string }[] = [];
+    for (const field of mediaFields) {
+      const value = data[field.slug];
+      if (!value) continue;
+      if (Array.isArray(value)) {
+        for (const id of value) {
+          if (typeof id === 'string') mediaIds.push({ fieldSlug: field.slug, assetId: id });
+        }
+      } else if (typeof value === 'string') {
+        mediaIds.push({ fieldSlug: field.slug, assetId: value });
+      }
+    }
+
+    await this.mediaService.syncReferencesForEntry(tenantId, entryId, contentType.id, mediaIds);
   }
 }

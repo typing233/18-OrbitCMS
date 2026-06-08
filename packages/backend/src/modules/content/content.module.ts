@@ -7,11 +7,13 @@ import { ContentController } from './content.controller';
 import { ContentService } from './content.service';
 import { ContentValidatorService } from './validation/content-validator.service';
 import { AuthModule } from '../auth/auth.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ContentEntry, ContentType, ContentVersion]),
     AuthModule,
+    MediaModule,
   ],
   controllers: [ContentController],
   providers: [ContentService, ContentValidatorService],

@@ -11,6 +11,7 @@ import {
   CalendarOutlined,
   CodeOutlined,
   LinkOutlined,
+  PictureOutlined,
 } from '@ant-design/icons';
 import { FieldType } from '../../types/content-type';
 
@@ -24,6 +25,7 @@ const fieldTypeIcons: Record<FieldType, React.ReactNode> = {
   [FieldType.DATE]: <CalendarOutlined />,
   [FieldType.JSON]: <CodeOutlined />,
   [FieldType.RELATION]: <LinkOutlined />,
+  [FieldType.MEDIA]: <PictureOutlined />,
 };
 
 const fieldTypeColors: Record<FieldType, string> = {
@@ -34,6 +36,7 @@ const fieldTypeColors: Record<FieldType, string> = {
   [FieldType.DATE]: 'cyan',
   [FieldType.JSON]: 'magenta',
   [FieldType.RELATION]: 'gold',
+  [FieldType.MEDIA]: 'volcano',
 };
 
 interface FieldCardProps {

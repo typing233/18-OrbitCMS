@@ -5,6 +5,7 @@ import { FieldType } from '../types/content-type';
 import type { Rule } from 'antd/es/form';
 import type { FormInstance } from 'antd';
 import RelationSelect from './RelationSelect';
+import MediaSelect from './MediaSelect';
 
 interface DynamicFieldProps {
   field: FieldDefinition;
@@ -97,6 +98,9 @@ export default function DynamicField({ field, contentTypes = [], form, namePrefi
           />
         );
       }
+
+      case FieldType.MEDIA:
+        return <MediaSelect />;
 
       default:
         return <Input placeholder={`Enter ${field.name.toLowerCase()}`} />;
